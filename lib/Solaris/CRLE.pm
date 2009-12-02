@@ -9,7 +9,7 @@ use Carp;
 
 =head1 NAME
 
-Solaris::CRLE - <One-line description of module's purpose>
+Solaris::CRLE - configure runtime linking environment for Solaris
 
 
 =head1 SYNOPSIS
@@ -73,6 +73,9 @@ has 'platform'             => ( is      => 'rw',
 
 =item parse()
 
+Executes the crle command against the ld.config file and then call
+parse_output on the results.
+
 =cut
 
 sub parse {
@@ -102,12 +105,19 @@ sub parse {
 
 =item parse_output()
 
+Given an array of lines that is the output of the crle command, parse
+each line and update internal data structures appropraitely.
+
 =cut
 
 sub parse_output {
     my ( $self, @lines ) = @_;
 
+    # data and ordered lib directories
     my $data;
+    my @lib_dirs;
+
+    # keep state while in the loop
     my $current_dir;
 
   LINE:
@@ -116,12 +126,12 @@ sub parse_output {
         next unless $line;
 
         if ( $current_dir && $line =~ m|^  (.*)$| ) {
-            $self->{libs}->{$current_dir}->{$1} = 1;
+            $data->{$current_dir}->{$1} = 1;
         }
         elsif ( $line =~ m|^Directory: (.*)\s*$| ) {
             $current_dir = $1;
-            $self->{libs}->{$current_dir} = {};
-            push @{ $self->{lib_dirs} }, $current_dir;
+            $data->{$current_dir} = {};
+            push @lib_dirs, $current_dir;
         }
         elsif ( $line =~ m|^Configuration file| ) {
             if ( $line =~ m|version (\d+)| ) {
@@ -155,6 +165,9 @@ sub parse_output {
         }
     }
 
+    $self->libs(     $data      );
+    $self->lib_dirs( \@lib_dirs );
+
     if ( $lines[-2] ) {
         my $command = $lines[-2];
         chomp $command;
@@ -164,6 +177,14 @@ sub parse_output {
 
 }
 
+=item $obj->find_lib( $lib )
+
+Search for a single library by name.
+
+The library paths will be searched in order, and the first directory
+containing the specified library will be returned.
+
+=cut
 
 sub find_lib {
     my ( $self, $lib ) = @_;
@@ -176,6 +197,23 @@ sub find_lib {
 
     return;
 }
+
+=item $obj->find_all_libs( $match )
+
+Search for all libraries matching the specified pattern.
+
+The library paths will be searched in order, and all matching
+libraries in each directory will be returned.
+
+The data returned is an array ref of hashes, where the key of each
+hash is a directory, and the value is an array of libraries found in
+the directory, sorted alphabetically.  For example:
+
+  [ { 'dir1' => [ 'lib1', 'lib2' ] },
+    { 'dir2' => [ 'lib1', 'lib3' ] },
+  ]
+
+=cut
 
 sub find_all_libs {
     my ( $self, $regexp ) = @_;
