@@ -16,6 +16,30 @@ Solaris::CRLE - configure runtime linking environment for Solaris
 
     use Solaris::CRLE;
 
+    # create a new crle object with the default ld.config path as
+    # defined in the environment variable $LD_CONFIG, or if $LD_CONFIG
+    # is not set, use /var/ld/ld.config.
+    my $crle = Solaris::CRLE->new();
+
+    # specify an alternate ld.config file
+    my $crle = Solaris::CRLE->new( ld_config => "/path/to/ld.config" );
+
+    # parse the ld.config file
+    $crle->parse();
+
+    # find the first directory in which 'libssl.so' is located
+    my $directory = $crle->find_lib( 'libssl.so' );
+
+    # find all libs matching m/libssl.so/ in all directories
+    my @matches = $crle->find_all_libs( 'libssl.so' );
+
+    # retrieve the default library path
+    my @directories = $crle->default_library_path;
+
+    # get the command used to build the ld.config
+    my $command = $crle->command;
+
+
 =head1 DESCRIPTION
 
 =cut
@@ -80,6 +104,10 @@ parse_output on the results.
 
 sub parse {
     my ( $self ) = @_;
+
+    unless ( -r $self->ld_config ) {
+        die "ERROR: ld_config not found: " . $self->ld_config . "\n";
+    }
 
     my $command = join " ", '/usr/bin/crle', '-c', $self->ld_config;
 
@@ -174,6 +202,16 @@ sub parse_output {
         $command =~ s|^\s+||;
         $self->command( $command );
     }
+}
+
+=item $obj->generate( $lib )
+
+=cut
+
+sub generate {
+    my ( $self ) = @_;
+
+    system( $self->command );
 
 }
 
@@ -234,6 +272,27 @@ sub find_all_libs {
     return \@matches;
 }
 
+=item $obj->generate_list()
+
+Generate a ordered array of lines, each of which contains a
+directory:library pair (colon delimited).  This is useful to diff the
+libraries in two separate ld.config files.
+
+=cut
+
+sub generate_list {
+    my ( $self ) = @_;
+
+    my @list;
+
+    for my $lib_dir ( @{ $self->lib_dirs } ) {
+        for my $lib ( sort keys %{ $self->libs->{$lib_dir} } ) {
+            push @list, "$lib_dir:$lib";
+        }
+    }
+
+    return @list;
+}
 
 #_* End
 
